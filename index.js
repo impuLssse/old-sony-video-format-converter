@@ -1,6 +1,6 @@
 import path from "path";
-import fs from "fs/promises";
 import { exists } from "fs";
+import fs from "fs/promises";
 import { promisify } from "util";
 import { exec } from "child_process";
 const execPromise = promisify(exec);
@@ -15,9 +15,12 @@ const outputDirectory = path.resolve(
 
 const bootstrapApp = async () => {
   const sourceVideos = await fs.readdir(sourceDirectory);
-  const promisesToBeCompleted = [];
+  const videoPlaylists = [];
+  const videoLimit = 6;
 
-  for (const sourceVideo of sourceVideos) {
+  let addedVideoCounter = 0;
+  for (let v = 0; v < sourceVideos.length; v++) {
+    const sourceVideo = sourceVideos.find((_, i) => i == v);
     if (sourceVideo.includes("_")) {
       continue;
     }
@@ -39,13 +42,27 @@ const bootstrapApp = async () => {
       continue;
     }
 
-    promisesToBeCompleted.push(
-      execPromise(
-        `ffmpeg -i ${sourceVideoPath} -c:v copy -c:a aac -strict experimental ${destinationVideoPath}`
-      )
-    );
+    const ffmpegCommand = `ffmpeg -i ${sourceVideoPath} -c:v libx264 -profile:v high -level 4.1 -movflags +faststart -c:a aac ${destinationVideoPath}`;
+
+    if (addedVideoCounter % videoLimit == 0) {
+      // Создаём новый массив в двумерном массиве вида [..., [вот такой новый]]
+      videoPlaylists.push([ffmpegCommand]);
+      addedVideoCounter++;
+    } else {
+      if (!Array.isArray(videoPlaylists[videoPlaylists.length - 1])) {
+        videoPlaylists[videoPlaylists.length] = [];
+      }
+
+      // В последний элемент массива [[..., сюда]] добавляем новый child_process
+      videoPlaylists[videoPlaylists.length - 1].push(ffmpegCommand);
+      addedVideoCounter++;
+    }
   }
 
-  await Promise.all(promisesToBeCompleted);
+  console.log(videoPlaylists);
+  for (let p = 0; p < videoPlaylists.length; p++) {
+    console.log(`Загружаю ${p + 1}-ую часть`);
+    await Promise.all(videoPlaylists[p].map((command) => execPromise(command)));
+  }
 };
 bootstrapApp();
